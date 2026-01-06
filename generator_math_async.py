@@ -108,7 +108,7 @@ class LLMInference:
                 # Client will be created per request from the pool
 
             """源代码有问题，自行修改"""
-        elif self.backend == "openai": 
+        elif self.backend == "openai":
             self.model_name = self.config.get("model_name", "gpt-4o")
             if api_pool is None:
                 self.logger.info("Using OpenAI/Azure backend with single endpoint.")
