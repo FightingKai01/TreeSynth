@@ -72,19 +72,19 @@ class LLMInference:
         max_workers=20,
         max_concurrent_requests=64,
     ):
-        self.logger = logger or logging.getLogger()
+        self.logger = logger or logging.getLogger()#短路取值
         self.backend = backend.lower().strip()
         self.max_retries = max_retries
         self.threadpool_executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=max_workers
-        )
+        )#创建线程池
         self.api_pool = api_pool
-        self.semaphore = asyncio.Semaphore(max_concurrent_requests)
-        self.config = config or {}
+        self.semaphore = asyncio.Semaphore(max_concurrent_requests)#asyncio.Semaphore（异步信号量）就是专门用来控制并发数量的工具
+        self.config = config or {}#配置参数是字典类型
 
         if self.backend == "vllm":
             self.model_name = self.config.get("model_name")
-            if api_pool is None:
+            if api_pool is None:#无API pool
                 self.logger.info("Using vLLM backend with single endpoint.")
                 self.client = OpenAI(
                     base_url=self.config.get("api_base"), 
@@ -94,7 +94,7 @@ class LLMInference:
                 self.logger.info("Using vLLM backend with API pool.")
                 # Client will be created per request from the pool
 
-        elif self.backend == "openai":
+        elif self.backend == "azure":
             self.model_name = self.config.get("model_name", "gpt-4o")
             if api_pool is None:
                 self.logger.info("Using OpenAI/Azure backend with single endpoint.")
@@ -106,10 +106,24 @@ class LLMInference:
             else:
                 self.logger.info("Using OpenAI/Azure backend with API pool.")
                 # Client will be created per request from the pool
+
+            """源代码有问题，自行修改"""
+        elif self.backend == "openai":
+            self.model_name = self.config.get("model_name", "gpt-4o")
+            if api_pool is None:
+                self.logger.info("Using OpenAI/Azure backend with single endpoint.")
+                self.client = OpenAI(
+                    base_url=self.config.get("api_base"),
+                    api_key=self.config.get("api_key")
+                )
+            else:
+                self.logger.info("Using OpenAI/Azure backend with API pool.")
+                # Client will be created per request from the pool
         else:
             raise ValueError(f"backend must be 'vllm' or 'openai', got {self.backend}.")
     
     async def generate_per_prompt_async(self, prompt, max_tokens=1024, temperature=0.7):
+
         assert isinstance(prompt, str), "Prompt must be a string."
         retries = 0
         ans = ""

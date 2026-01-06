@@ -13,7 +13,7 @@ httpx>=0.24.0
 # Progress bars and UI
 tqdm>=4.64.0
 
-# Tree structure visualization
+# Tree structure visualization用于打印漂亮的树结构
 PrettyPrintTree>=2.0.1
 
 # Standard library modules (no installation needed)

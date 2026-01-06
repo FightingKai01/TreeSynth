@@ -13,26 +13,33 @@ DEFAULT_CONFIG = {
     "max_retries": 5,
 }
 
-# Backend-specific configurations
+# # Backend-specific configurations
+# BACKEND_CONFIGS = {
+#     "vllm": {·
+#         "api_base": "vllm-api-base",
+#         "api_key": "vllm-api-key",
+#         "model_name": "/path/to/model/qwen2_5-72b-instruct",
+#     },
+#     "azure": {
+#         "api_key": "azure-api-key",
+#         "model_name": "gpt-4o",
+#         "azure_endpoint": "https://azure-endpoint.openai.azure.com/",
+#         "api_version": "2024-10-21",
+#     },
+#     "openai": {
+#         "api_key": "openai-api-key",
+#         "model_name": "gpt-4o",
+#     }
+# }
 BACKEND_CONFIGS = {
-    "vllm": {
-        "api_base": "vllm-api-base",
-        "api_key": "vllm-api-key",
-        "model_name": "/path/to/model/qwen2_5-72b-instruct",
-    },
-    "azure": {
-        "api_key": "azure-api-key",
-        "model_name": "gpt-4o",
-        "azure_endpoint": "https://azure-endpoint.openai.azure.com/",
-        "api_version": "2024-10-21",
-    },
     "openai": {
-        "api_key": "openai-api-key",
-        "model_name": "gpt-4o",
+        "api_base": "https://api.chatanywhere.tech/v1",
+        "api_key": "sk-XmIRSMlKzuvKnKeOFlErHL9iHIKAjPSvCyEP92GxQuubRv0h",#chatanywhere
+        "model_name": "gpt-4o",#https://openai.com/index/hello-gpt-4o 对应gpt-4o-2024-08-06
     }
 }
 
-# API pool configurations
+# API pool configurations（可选：为了实现高吞吐量数据生成，请配置多个 API 端点）
 VLLM_API_POOL = [
     {
         "api_base": "vllm-api-base",
