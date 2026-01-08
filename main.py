@@ -202,17 +202,17 @@ async def run_generation_process(
     # 如果没有旧文件或加载失败，则创建一个全新的根节点 (Root Node)。
     if root_node is None:
         root_node = TreeNode(
-            llm_engine=llm_engine,
-            threadpool_executor=threadpool_executor,
-            tree_structure_file=tree_structure_file,
+            llm_engine=llm_engine,#本身具备一个线程池
+            threadpool_executor=threadpool_executor,#树节点类也需要一个线程池
+            tree_structure_file=tree_structure_file,#输出的可视化文件
             depth=0,
             parent=None,
             dimension=None,  
             attribute_value=None,
             max_depth=config.get("max_depth", 4),
-            num_samples_per_node=config.get("num_samples_per_node", 10),
-            infinite_threshold=config.get("max_sample_infinite_attribute", 50),
-            max_attribute_count=config.get("max_attribute_count", 50),
+            num_samples_per_node=config.get("num_samples_per_node", 10),#代表样本数量
+            infinite_threshold=config.get("max_sample_infinite_attribute", 50),# 无限属性的阈值
+            max_attribute_count=config.get("max_attribute_count", 50),#每个节点的最大属性数
         )
     # 9. 执行异步扩展 (Core Execution)
     # 调用根节点的 expand_nodes_async 方法，开始递归地生成数据。
@@ -223,10 +223,12 @@ async def run_generation_process(
     # 生成结束后，单独保存一份树的结构文件（通常只包含节点关系，不包含具体生成的样本数据），用于可视化或分析。
     root_node.save_tree_structure(tree_structure_file)
     # 11. 最终校验与返回
-    # 检查根节点下是否有数据，如果生成失败（空数据），记录错误并返回 None。
-    if not root_node.samples:
-        logger.error("Root node has no samples after expansion.")
-        return None
+    # 检查根节点下是否有数据，如果生成失败（空数据），记录错误并返回 None。 todo generator_math_async生成,根节点并没有基于生成的 枢轴样本来确定划分准者和分类属性,而是人为规定
+    # todo如果是 Root 节点，允许它没有 samples，只要它有 children 就行
+    if not root_node.samples and not root_node.children:
+        logger.error("Root node has no samples and no children after expansion.")
+    elif not root_node.samples:
+        logger.info("Root node expansion comp lete (Data acts as a container).")
 
     logger.info("Data generation completed successfully.")
     return root_node

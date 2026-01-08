@@ -2,15 +2,15 @@ import os
 
 # Common configuration parameters
 DEFAULT_CONFIG = {
-    "max_depth": 4,
-    "num_samples_per_node": 10,
-    "max_attribute_count": 50,
-    "max_sample_infinite_attribute": 50,
-    "infinite_path_samples": 10,
+    "max_depth": 2,#4
+    "num_samples_per_node": 10,#10
+    "max_attribute_count": 25,#50
+    "max_sample_infinite_attribute": 25,#50
+    "infinite_path_samples": 10,#10
     # "infinite_path_samples": 5,
-    "max_workers": 64,
-    "max_concurrent_requests": 64,
-    "max_retries": 5,
+    "max_workers": 64,#64
+    "max_concurrent_requests": 64,#64
+    "max_retries": 5,#5
 }
 
 # # Backend-specific configurations
