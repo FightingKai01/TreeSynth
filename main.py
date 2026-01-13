@@ -11,7 +11,7 @@ import random
 import torch
 import numpy as np
 from config import DEFAULT_CONFIG, BACKEND_CONFIGS, VLLM_API_POOL, OPENAI_API_POOL
-from generator_math_async import LLMInference, APIPool, TreeNode, inject_runtime_to_tree
+from mcts_generator_gsm_async import LLMInference, APIPool, TreeNode, inject_runtime_to_tree
 
 def set_seed(seed: int = 42):
     """
@@ -189,9 +189,9 @@ async def run_generation_process(
                 root_node,
                 llm_engine,
                 threadpool_executor,
-                config.get("max_depth", 4),
-                config.get("max_sample_infinite_attribute", 50),
-                config.get("max_attribute_count", 50)
+                config.get("max_depth", 6),
+                config.get("max_sample_infinite_attribute", 25),
+                config.get("max_attribute_count", 25)
             )
             logger.info("Successfully loaded existing tree. Will continue expansion.")
         except Exception as e:
@@ -211,8 +211,8 @@ async def run_generation_process(
             attribute_value=None,
             max_depth=config.get("max_depth", 4),
             num_samples_per_node=config.get("num_samples_per_node", 10),#代表样本数量
-            infinite_threshold=config.get("max_sample_infinite_attribute", 50),# 无限属性的阈值
-            max_attribute_count=config.get("max_attribute_count", 50),#每个节点的最大属性数
+            infinite_threshold=config.get("max_sample_infinite_attribute", 25),# 无限属性的阈值
+            max_attribute_count=config.get("max_attribute_count", 25),#每个节点的最大属性数
         )
     # 9. 执行异步扩展 (Core Execution)
     # 调用根节点的 expand_nodes_async 方法，开始递归地生成数据。

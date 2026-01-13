@@ -1311,7 +1311,6 @@ class TreeNode:
             infinite_count = self.count_infinite_nodes_in_path()
             # 计算还需要生成多少轮 (总轮数 - 已经生成的1轮)
             total_samples = max(0, infinite_path_samples ** infinite_count - 1)
-
             final_samples = list(samples)  # 拷贝一份，避免污染引用
 
             if total_samples > 0:
@@ -1320,7 +1319,7 @@ class TreeNode:
                     # 但我们在最后会手动修正它。
                     extra_samples = await self.generate_samples_async()
                     final_samples.extend(extra_samples)
-                    self.logging(f"Generated additional batch {i + 1}/{remaining_batches}", level="info")
+                    self.logging(f"Generated additional batch {i + 1}/{total_samples}", level="info")
 
             # todo 自己修改手动将 self.samples 更新为完整的列表
             self.samples = final_samples

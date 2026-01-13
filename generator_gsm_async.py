@@ -93,18 +93,29 @@ class LLMInference:
             else:
                 self.logger.info("Using vLLM backend with API pool.")
                 # Client will be created per request from the pool
-
-        elif self.backend == "openai":
+        elif self.backend == "azure":
             self.model_name = self.config.get("model_name", "gpt-4o")
             if api_pool is None:
-                self.logger.info("Using OpenAI/Azure backend with single endpoint.")
+                self.logger.info("Using Azure backend with single endpoint.")
                 self.client = AzureOpenAI(
                     azure_endpoint=self.config.get("azure_endpoint"),
                     api_key=self.config.get("api_key"),
                     api_version=self.config.get("api_version")
                 )
             else:
-                self.logger.info("Using OpenAI/Azure backend with API pool.")
+                self.logger.info("Using Azure backend with API pool.")
+                # Client will be created per request from the pool
+        # todo 自行修改，源代码有问题.
+        elif self.backend == "openai":
+            self.model_name = self.config.get("model_name", "gpt-4o")
+            if api_pool is None:
+                self.logger.info("Using OpenAI backend with single endpoint.")
+                self.client = OpenAI(
+                    base_url=self.config.get("api_base"),
+                    api_key=self.config.get("api_key")
+                )
+            else:
+                self.logger.info("Using OpenAI backend with API pool.")
                 # Client will be created per request from the pool
         else:
             raise ValueError(f"backend must be 'vllm' or 'openai', got {self.backend}.")
@@ -129,7 +140,7 @@ class LLMInference:
                                 api_key=conf["api_key"]
                             )
                             model_name = conf["model_name"]
-                        else:  # openai
+                        elif self.backend == "azure":  # [Azure 后端]
                             conf, conf_idx = self.api_pool.get_next_config()
                             local_client = AzureOpenAI(
                                 azure_endpoint=conf["endpoint"],
@@ -137,6 +148,17 @@ class LLMInference:
                                 api_version=conf["version"]
                             )
                             model_name = conf["model"]
+                        elif self.backend == "openai":  # todo 自己修改 增加 openai的客户端配置 同 vLLM配置一样
+                            # [openai 后端]
+                            # get_next_config() 会以轮询 (Round-Robin) 方式返回一个可用的配置字典和其索引
+                            conf, conf_idx = self.api_pool.get_next_config()
+                            # 动态创建一个临时的 OpenAI 客户端实例
+                            # 因为每次轮询到的 base_url 和 api_key 可能不同，所以不能复用全局 client
+                            local_client = OpenAI(
+                                base_url=conf["api_base"],
+                                api_key=conf["api_key"]
+                            )
+                            model_name = conf["model_name"]
                     else:
                         local_client = self.client
                         model_name = self.model_name
@@ -449,28 +471,54 @@ class TreeNode:
 
         dimensions = self.retrieve_parent_dimensions()
 
-        prompt = f"""As an analysis expert, your task is to examine the following questions to identify the SINGLE most significant dimension that characterizes the question space and differentiates these questions.
-Questions:
-{samples}
+        prompt = f"""
+        As an analysis expert, your task is to examine the following questions to identify the SINGLE most significant dimension that characterizes the question space and differentiates these questions.
+        Questions:
+        {samples}
+        
+        Dimension Requirements:
+        1. Core Dimension Identification: Identify exactly ONE core dimension that best distinguishes these questions.
+        2. Excluded Dimensions: {', '.join(dimensions)}
+        3. Unique Categorization: Each question MUST be categorized into exactly ONE attribute value.
+        4. Mutually Exclusive Values: Attribute values must be mutually exclusive.
+        5. Clarity in Values: Avoid ambiguous attribute values, such as "others".
+        6. Independent Values: Each attribute must be a single distinct value - NO combined values like "attribute1_and_attribute2" or "attribute1/attribute2"! Each attribute must be a single distinct value - NO combined values like "attribute1_and_attribute2" or "attribute1/attribute2"! Each attribute must be a single distinct value - NO combined values like "attribute1_and_attribute2" or "attribute1/attribute2"!
+        
+        Organize your responses in the following format without any extra text or explanations:
+        {{
+        "dimension": "dimension_name",
+        "attributes": {{
+            "attribute1": [list of sample indices],
+            "attribute2": [list of sample indices],
+            ...
+        }}
+        }}
+        """
+        """
+        作为分析专家，你的任务是检查以下问题，并识别出表征这些问题空间并区分这些问题的**唯一**最显著维度。
+        问题列表：
+        {samples}
+        
+        维度要求：
+        1. 核心维度识别：准确识别出一个最能区分这些问题的核心维度。
+        2. 排除的维度：{', '.join(dimensions)}
+        3. 唯一分类：每个问题必须被归类到准确的一个属性值中。
+        4. 互斥值：属性值必须是互斥的。
+        5. 数值清晰：避免使用模棱两可的属性值，例如 "others"（其他）。
+        6. 独立值：每个属性必须是一个单一且独特的数值——绝不能包含组合值，如 "attribute1_and_attribute2" 或 "attribute1/attribute2"！每个属性必须是一个单一且独特的数值——绝不能包含组合值，如 "attribute1_and_attribute2" 或 "attribute1/attribute2"！每个属性必须是一个单一且独特的数值——绝不能包含组合值，如 "attribute1_and_attribute2" 或 "attribute1/attribute2"！
+        
+        请按照以下格式组织你的回答，不要有任何额外的文本或解释：
+        {
+        "dimension": "维度名称",
+        "attributes": {
+            "属性1": [样本索引列表],
+            "属性2": [样本索引列表],
+            ...
+            }
+        }
+        """
 
-Dimension Requirements:
-1. Core Dimension Identification: Identify exactly ONE core dimension that best distinguishes these questions.
-2. Excluded Dimensions: {', '.join(dimensions)}
-3. Unique Categorization: Each question MUST be categorized into exactly ONE attribute value.
-4. Mutually Exclusive Values: Attribute values must be mutually exclusive.
-5. Clarity in Values: Avoid ambiguous attribute values, such as "others".
-6. Independent Values: Each attribute must be a single distinct value - NO combined values like "attribute1_and_attribute2" or "attribute1/attribute2"! Each attribute must be a single distinct value - NO combined values like "attribute1_and_attribute2" or "attribute1/attribute2"! Each attribute must be a single distinct value - NO combined values like "attribute1_and_attribute2" or "attribute1/attribute2"!
 
-Organize your responses in the following format without any extra text or explanations:
-{{
-"dimension": "dimension_name",
-"attributes": {{
-    "attribute1": [list of sample indices],
-    "attribute2": [list of sample indices],
-    ...
-}}
-}}
-"""
         return prompt
 
     def select_dimension_and_classify(self):
@@ -522,80 +570,149 @@ Organize your responses in the following format without any extra text or explan
 
     def format_expand_prompt(self, dimension, attribute_values):
 
-        prompt = f"""As an analysis expert, your task is to supplement the potential attribute values for a specified dimension in order to comprehensively model the entire space of questions.
+        prompt = f"""
+        As an analysis expert, your task is to supplement the potential attribute values for a specified dimension in order to comprehensively model the entire space of questions.
 
-Dimension: {dimension}
-Exiting attributes values: {json.dumps(attribute_values, indent=2)}
+        Dimension: {dimension}
+        Exiting attributes values: {json.dumps(attribute_values, indent=2)}
+        
+        Requirements for New Attribute Values:
+        1. Clarity: Avoid ambiguous values, such as "others".
+        2. Mutual Exclusivity: Ensure that attribute values do not overlap.
+        3. Completeness: Ensure that all possible attribute values fully cover the dimension.
+        4. GRADE LEVEL: Keep all values within elementary and middle school students' understanding! Keep all values within elementary and middle school students' understanding! Keep all values within elementary and middle school students' understanding! 
+        5. SIMPLICITY: Use basic, straightforward terms that young students can understand! Use basic, straightforward terms that young students can understand! Use basic, straightforward terms that young students can understand! 
+        
+        Organize your responses in the following format without any extra text or explanations:
+        - If the existing attribute values completely cover the entire dimension, only output "null". For example,
+        null
+        - If the number of potential attribute values is more than 10, first output 10 potential new attribute values, and end your output with "infinite" in a new line. For example,
+        attribute value 1
+        attribute value 2
+        ...
+        attribute value 10
+        infinite
+        - Otherwise, output all the potential new attribute values, and end your output with "complete" in a new line. For example,
+        attribute value 1
+        attribute value 2
+        ...
+        attribute value n
+        complete
+        
+        """
+        """
+        作为分析专家，你的任务是为指定维度补充潜在的属性值，以便全面地对整个问题空间进行建模。
 
-Requirements for New Attribute Values:
-1. Clarity: Avoid ambiguous values, such as "others".
-2. Mutual Exclusivity: Ensure that attribute values do not overlap.
-3. Completeness: Ensure that all possible attribute values fully cover the dimension.
-4. GRADE LEVEL: Keep all values within elementary and middle school students' understanding! Keep all values within elementary and middle school students' understanding! Keep all values within elementary and middle school students' understanding! 
-5. SIMPLICITY: Use basic, straightforward terms that young students can understand! Use basic, straightforward terms that young students can understand! Use basic, straightforward terms that young students can understand! 
-
-Organize your responses in the following format without any extra text or explanations:
-- If the existing attribute values completely cover the entire dimension, only output "null". For example,
-null
-- If the number of potential attribute values is more than 10, first output 10 potential new attribute values, and end your output with "infinite" in a new line. For example,
-attribute value 1
-attribute value 2
-...
-attribute value 10
-infinite
-- Otherwise, output all the potential new attribute values, and end your output with "complete" in a new line. For example,
-attribute value 1
-attribute value 2
-...
-attribute value n
-complete
-
-"""
+        维度：{dimension}
+        现有属性值：{json.dumps(attribute_values, indent=2)}
+        
+        新属性值的要求：
+        1. 清晰度：避免使用模棱两可的值，例如 "others"（其他）。
+        2. 互斥性：确保属性值互不重叠。
+        3. 完整性：确保所有可能的属性值完全覆盖该维度。
+        4. 年级水平：所有值必须在小学和初中学生理解范围内！所有值必须在小学和初中学生理解范围内！所有值必须在小学和初中学生理解范围内！
+        5. 简单性：使用年轻学生能听懂的基本、直白的术语！使用年轻学生能听懂的基本、直白的术语！使用年轻学生能听懂的基本、直白的术语！
+        
+        请按照以下格式组织你的回答，不要包含任何额外的文本或解释：
+        - 如果现有属性值已完全覆盖整个维度，仅输出 "null"。例如：
+        null
+        - 如果潜在属性值的数量超过 10 个，先输出 10 个潜在的新属性值，并在新的一行以 "infinite" 结束输出。例如：
+        属性值 1
+        属性值 2
+        ...
+        属性值 10
+        infinite
+        - 否则，输出所有潜在的新属性值，并在新的一行以 "complete" 结束输出。例如：
+        属性值 1
+        属性值 2
+        ...
+        属性值 n
+        complete
+        """
 
         return prompt
 
     def format_gen_prompt(self):
 
         if self.is_root():
-            prompt = """As a math expert, you are tasked to generate 10 GSM8K-style math word problems suitable for a bright middle school student.
+            prompt = """
+            As a math expert, you are tasked to generate 10 GSM8K-style math word problems suitable for a bright middle school student.
 
-Each question should meet the following criteria:
-1. Format: Write problems as real-world word problems that require mathematical reasoning to solve.
-2. Step Count: Require between 2 and 8 steps to solve.
-3. Operations: Utilize basic arithmetic operations: addition (+), subtraction (-), multiplication (*), and division (/).
-4. Complexity: Vary in context and complexity, but REMAIN ACCESSIBLE TO MIDDLE SCHOOL STUDENTS!
-5. Clarity: Provide clear, concise questions that encourage step-by-step calculations to reach the final answer.
-6. Language: Use natural, conversational language to describe situations while keeping problems clear and unambiguous.
-7. Diversity: Ensure that the questions are diverse and distinct from one another from all potential perspectives.
+            Each question should meet the following criteria:
+            1. Format: Write problems as real-world word problems that require mathematical reasoning to solve.
+            2. Step Count: Require between 2 and 8 steps to solve.
+            3. Operations: Utilize basic arithmetic operations: addition (+), subtraction (-), multiplication (*), and division (/).
+            4. Complexity: Vary in context and complexity, but REMAIN ACCESSIBLE TO MIDDLE SCHOOL STUDENTS!
+            5. Clarity: Provide clear, concise questions that encourage step-by-step calculations to reach the final answer.
+            6. Language: Use natural, conversational language to describe situations while keeping problems clear and unambiguous.
+            7. Diversity: Ensure that the questions are diverse and distinct from one another from all potential perspectives.
+            
+            Organize your responses in the following format without any extra text or explanations:
+            Question 1: text
+            Question 2: text
+            ...
+            Question 10: text
+            """
+            """
+            作为数学专家，你的任务是生成 10 道适合聪明初中生的 GSM8K 风格的数学应用题。
 
-Organize your responses in the following format without any extra text or explanations:
-Question 1: text
-Question 2: text
-...
-Question 10: text
-"""
+            每个问题应符合以下标准：
+            1. 格式：将问题编写为需要数学推理才能解决的现实世界应用题。
+            2. 步骤数量：解决问题需要 2 到 8 个步骤。
+            3. 运算：利用基本算术运算：加 (+)、减 (-)、乘 (*)、除 (/)。
+            4. 复杂性：在情境和复杂性上要多样化，但必须保持初中生能够理解！
+            5. 清晰度：提供清晰、简明的问题，鼓励通过一步步的计算得出最终答案。
+            6. 语言：使用自然、对话式的语言描述情境，同时保持问题清晰无歧义。
+            7. 多样性：确保问题在所有潜在角度上都是多样且彼此独特的。
+            
+            请按照以下格式组织你的回答，不要包含任何额外的文本或解释：
+            Question 1: 文本
+            Question 2: 文本
+            ...
+            Question 10: 文本
+            """
 
         else:
             attributes = self.retrieve_dimension_values()
             attributes_json = json.dumps(attributes, indent=2, ensure_ascii=False)
-            prompt = f"""As a math expert, you are tasked to generate 10 GSM8K-style math word problems suitable for a bright middle school student.
+            prompt = f"""
+            As a math expert, you are tasked to generate 10 GSM8K-style math word problems suitable for a bright middle school student.
 
-Each question should meet the following criteria:
-1. Format: Write problems as real-world word problems that require mathematical reasoning to solve.
-2. Step Count: Require between 2 and 8 steps to solve.
-3. Operations: Utilize basic arithmetic operations: addition (+), subtraction (-), multiplication (*), and division (/).
-4. Complexity: Vary in context and complexity, but REMAIN ACCESSIBLE TO MIDDLE SCHOOL STUDENTS!
-5. Clarity: Provide clear, concise questions that encourage step-by-step calculations to reach the final answer.
-6. Language: Use natural, conversational language to describe situations while keeping problems clear and unambiguous.
-7. Diversity: Ensure that the questions are diverse and distinct from one another from all potential perspectives.
-8. Attributes: Each problem should be associated with all these attributes: {attributes_json}
+            Each question should meet the following criteria:
+            1. Format: Write problems as real-world word problems that require mathematical reasoning to solve.
+            2. Step Count: Require between 2 and 8 steps to solve.
+            3. Operations: Utilize basic arithmetic operations: addition (+), subtraction (-), multiplication (*), and division (/).
+            4. Complexity: Vary in context and complexity, but REMAIN ACCESSIBLE TO MIDDLE SCHOOL STUDENTS!
+            5. Clarity: Provide clear, concise questions that encourage step-by-step calculations to reach the final answer.
+            6. Language: Use natural, conversational language to describe situations while keeping problems clear and unambiguous.
+            7. Diversity: Ensure that the questions are diverse and distinct from one another from all potential perspectives.
+            8. Attributes: Each problem should be associated with all these attributes: {attributes_json}
+            
+            Organize your responses in the following format without any extra text or explanations:
+            Question 1: text
+            Question 2: text
+            ...
+            Question 10: text
+            """
+            """
+            作为数学专家，你的任务是生成 10 道适合聪明初中生的 GSM8K 风格的数学应用题。
 
-Organize your responses in the following format without any extra text or explanations:
-Question 1: text
-Question 2: text
-...
-Question 10: text
-"""
+            每个问题应符合以下标准：
+            1. 格式：将问题编写为需要数学推理才能解决的现实世界应用题。
+            2. 步骤数量：解决问题需要 2 到 8 个步骤。
+            3. 运算：利用基本算术运算：加 (+)、减 (-)、乘 (*)、除 (/)。
+            4. 复杂性：在情境和复杂性上要多样化，但必须保持初中生能够理解！
+            5. 清晰度：提供清晰、简明的问题，鼓励通过一步步的计算得出最终答案。
+            6. 语言：使用自然、对话式的语言描述情境，同时保持问题清晰无歧义。
+            7. 多样性：确保问题在所有潜在角度上都是多样且彼此独特的。
+            8. 属性：每个问题应与所有这些属性相关联：{attributes_json}
+            
+            请按照以下格式组织你的回答，不要包含任何额外的文本或解释：
+            Question 1: 文本
+            Question 2: 文本
+            ...
+            Question 10: 文本
+            """
 
         return prompt
 
@@ -603,7 +720,7 @@ Question 10: text
         async def generate_subsamples():
             single_prompt = self.format_gen_prompt()
 
-            responses = await self.llm_engine.generate_batch_async([single_prompt])
+            responses = await self.llm_engine.generate_batch_async([single_prompt])# todo 关键点，将prompt转化成列表，视为多个任务，返回得到的就是 responses列表
 
             all_samples = []
             pattern = r"Question\s+(\d+)\s*:\s*(.*?)(?=\s*Question\s+\d+:|$)"
@@ -689,7 +806,7 @@ Question 10: text
                 self.logging(f"Attempt {attempts}: invalid response => retrying", level="warning")
                 continue
 
-            elif candidates[-1] == "infinite":
+            elif candidates[-1] == "infinite":#todo 这里已经用到挤牙膏的思想了，以实现更加多样性
                 attribute_values += candidates[:-1]
                 if len(attribute_values) > self.max_attribute_count:
                     break
@@ -742,23 +859,23 @@ Question 10: text
     async def _expand_single_node_async(self, output_file, result_file):
         config = getattr(self.llm_engine, "config", {})
         infinite_path_samples = config.get("infinite_path_samples", 3)
-        
+
         if self.depth >= self.max_depth:
             self.logging(f"[Leaf@MaxDepth] depth={self.depth}, stop expansion.", level="info")
-            
+
             infinite_count = self.count_infinite_nodes_in_path()
             total_samples = max(1, infinite_path_samples ** infinite_count)
             self.logging(f"Path has {infinite_count} infinite nodes, generating {total_samples} sample sets", level="info")
-            
+
             all_samples = []
             for i in range(total_samples):
                 samples = await self.generate_samples_async()
                 all_samples.extend(samples)
                 if i > 0:
                     self.logging(f"Generated sample set {i+1}/{total_samples} for infinite path", level="info")
-            
+
             self.samples = all_samples
-            
+
             if result_file:
                 with open(result_file, "a", encoding="utf-8") as f:
                     for q in all_samples:
@@ -771,16 +888,34 @@ Question 10: text
             return []
 
         samples = await self.generate_samples_async()
-
         dim_dict = await self.select_dimension_and_classify_async(max_attempts=5)
         if dim_dict is None:
             self.logging("Dimension classification failed => treat this node as leaf.", "warning")
-            if result_file:
+            # todo 自己修改 执行无限节点步长
+            infinite_count = self.count_infinite_nodes_in_path()
+            # 计算还需要生成多少轮 (总轮数 - 已经生成的1轮)
+            total_samples = max(0, infinite_path_samples ** infinite_count - 1)
+            final_samples = list(samples)  # 拷贝一份，避免污染引用
+
+            if total_samples > 0:
+                for i in range(total_samples):
+                    # 注意：这里 generate_samples_async 依然会覆盖 self.samples，
+                    # 但我们在最后会手动修正它。
+                    extra_samples = await self.generate_samples_async()
+                    final_samples.extend(extra_samples)
+                    self.logging(f"Generated additional batch {i + 1}/{total_samples}", level="info")
+
+            # todo 自己修改手动将 self.samples 更新为完整的列表
+            self.samples = final_samples
+
+            """============================================================================"""
+
+            if result_file:  # 直接将生成的枢轴样本 作为当前叶子节点生成的 最终问题样本
                 with open(result_file, "a", encoding="utf-8") as f:
                     for q in samples:
                         line = {"question": q}
                         f.write(json.dumps(line, ensure_ascii=False) + "\n")
-            return []
+            return []  # 返回空列表，表示没有下一层了
 
         dimension = dim_dict["dimension"]
         attribute_list = list(dim_dict["attributes"].keys())
@@ -826,10 +961,11 @@ Question 10: text
 
         if not self.children:
             self.logging(f"[Leaf] Node dimension={dimension} => leaf node with no children, writing samples.", level="info")
-            
+
             infinite_count = self.count_infinite_nodes_in_path()
             total_samples = max(0, infinite_path_samples ** infinite_count - 1)
-            
+            # todo 自己修改
+            final_samples = list(samples)
             if total_samples > 0:
                 additional_samples = []
                 for i in range(total_samples):
@@ -837,7 +973,9 @@ Question 10: text
                     additional_samples.extend(extra_samples)
                     self.logging(f"Generated additional sample set {i+1}/{total_samples} for infinite path (leaf node)", level="info")
                 samples.extend(additional_samples)
-            
+
+            # todo 自己修改手动将 self.samples 更新为完整的列表
+            self.samples = final_samples
             if result_file:
                 with open(result_file, "a", encoding="utf-8") as f:
                     for q in samples:
